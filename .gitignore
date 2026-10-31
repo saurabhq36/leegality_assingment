@@ -1,5 +1,59 @@
-venv/
+# Virtual environments
 .venv/
+venv/
+env/
+ENV/
+
+# Python-generated files
 __pycache__/
-*.pyc
+*.py[cod]
+.python_history
+
+# Local settings and secrets; keep example configuration files
 .env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+# Local SQLite databases and temporary database files
+*.db
+*.db-*
+*.db.bak
+*.sqlite
+*.sqlite-*
+*.sqlite.bak
+*.sqlite3
+*.sqlite3-*
+*.sqlite3.bak
+
+# Tool caches and generated reports
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Build output
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Local logs and process files
+*.log
+logs/
+*.pid
+
+# Editor and operating-system files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+._*
+Thumbs.db
