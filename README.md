@@ -185,22 +185,36 @@ is different. Reverse directions are independent.
 
 ## List nodes and connections
 
-Both endpoints return all records by default, including deleted versions.
-Records are ordered by ID, from oldest to newest. Filters can be combined.
+Both endpoints return a JSON array for one page. Active and deleted versions
+are included unless `is_active` is supplied. Records are ordered by ascending ID.
+Filters can be combined and are applied before pagination.
 
 | Endpoint | Fields in each result | Optional filters |
 |---|---|---|
 | `GET /nodes` | `id`, `name`, `is_active`, `created_at`, `deactivated_at` | `name`, `is_active` |
 | `GET /edges` | `id`, `source_id`, `destination_id`, `source`, `destination`, `latency`, `is_active`, `created_at`, `deactivated_at` | `source`, `destination`, `is_active` |
 
-Examples:
+Both endpoints accept these pagination parameters:
+
+| Parameter | Meaning |
+|---|---|
+| `limit` | Records per page; default `100`, allowed range `1`–`1000` |
+| `offset` | Matching records to skip; default `0`, must be nonnegative |
+
+Examples of first pages, next pages, and filtered pages:
 
 ```text
-GET /nodes?name=A
-GET /nodes?name=A&is_active=false
-GET /edges?is_active=true
-GET /edges?source=A&destination=B&is_active=false
+GET /nodes?limit=100&offset=0
+GET /nodes?limit=100&offset=100
+GET /nodes?name=A&is_active=false&limit=20&offset=0
+GET /edges?limit=100&offset=0
+GET /edges?limit=100&offset=100
+GET /edges?source=A&destination=B&is_active=false&limit=20&offset=0
 ```
+
+Invalid pagination values return `400` with the usual `{"error":"..."}` format.
+A page beyond the matching records returns `[]`. Each page is a separate request;
+changes between requests can shift results, so pages are not a frozen snapshot.
 
 Name filters match full names. `is_active` is a JSON boolean: `true` means active;
 `false` means deleted. Connection endpoint IDs distinguish node versions when a
@@ -278,7 +292,7 @@ creation-response ID. Then create the name again:
 curl -X DELETE http://127.0.0.1:8000/nodes/NODE_ID
 curl -X POST http://127.0.0.1:8000/nodes \
   -H 'Content-Type: application/json' -d '{"name":"A"}'
-curl 'http://127.0.0.1:8000/nodes?name=A'
+curl 'http://127.0.0.1:8000/nodes?name=A&is_active=true'
 curl 'http://127.0.0.1:8000/edges?source=A&is_active=true'
 ```
 
@@ -367,6 +381,9 @@ CREATE TABLE IF NOT EXISTS nodes (
 CREATE UNIQUE INDEX IF NOT EXISTS unique_active_node_name
 ON nodes (name) WHERE is_active = 1;
 
+CREATE INDEX IF NOT EXISTS idx_nodes_name ON nodes (name);
+CREATE INDEX IF NOT EXISTS idx_nodes_is_active ON nodes (is_active);
+
 CREATE TABLE IF NOT EXISTS edges (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_id INTEGER NOT NULL REFERENCES nodes(id),
@@ -380,6 +397,10 @@ CREATE TABLE IF NOT EXISTS edges (
 CREATE UNIQUE INDEX IF NOT EXISTS unique_active_edge
 ON edges (source_id, destination_id) WHERE is_active = 1;
 
+CREATE INDEX IF NOT EXISTS idx_edges_source_id ON edges (source_id);
+CREATE INDEX IF NOT EXISTS idx_edges_destination_id ON edges (destination_id);
+CREATE INDEX IF NOT EXISTS idx_edges_is_active ON edges (is_active);
+
 CREATE TABLE IF NOT EXISTS route_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT NOT NULL,
@@ -388,6 +409,9 @@ CREATE TABLE IF NOT EXISTS route_history (
     path TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_route_history_created_at
+ON route_history (created_at DESC, id DESC);
 ```
 
 Each edge has two references to `nodes.id`: one for its source and one for its
@@ -421,6 +445,26 @@ stores saved results separately, without foreign keys to the current graph.
   such as `["A", "C", "B"]`, and becomes a JSON array in API responses. Keeping
   these values separately prevents later graph changes from changing old results.
   Total latency can be zero for a node-to-itself query.
+
+## Indexes
+
+The partial unique indexes above cover active records only. The other indexes
+also support reading inactive versions:
+
+| Index | Helps with |
+|---|---|
+| `idx_nodes_name` | Finding every version of a name for listings and audit |
+| `idx_nodes_is_active` | Filtering node pages by activity, in ID order |
+| `idx_edges_source_id` | Finding outgoing connections and joining their source nodes, including inactive versions |
+| `idx_edges_destination_id` | Finding incoming connections and joining their destination nodes, including inactive versions |
+| `idx_edges_is_active` | Filtering connection pages and loading the active routing graph |
+| `idx_route_history_created_at` | History date filters and newest-first ordering |
+
+The endpoint indexes also help find connections affected by node deletion.
+There is no extra ID index because each integer primary key already provides ID
+lookup and ordering. Indexes use some disk space and add a small maintenance cost
+to inserts and updates. Startup creates missing indexes in the existing
+`network.db` automatically; no database reset is needed.
 
 ## Basic questions the database can answer
 
@@ -512,8 +556,10 @@ upgraded while preserving IDs, active flags, weights, references, and history.
 Schema upgrades run in a transaction; if an upgrade fails, its changes are
 rolled back. Unknown legacy times remain `null`.
 
-Count inactive rows from `GET /nodes?name=A&is_active=false` to count the recorded
-node deletions for A. Repeated DELETE requests do not increase this count.
+To count recorded node deletions for A through the API, fetch every page of
+`GET /nodes?name=A&is_active=false&limit=100&offset=0`, increasing `offset` by
+`100` until the response is `[]`, and add the page lengths. One page may not
+contain every inactive version. Repeated DELETE requests do not increase the count.
 Creation/deletion cycles from before version records existed cannot be recovered
 from the old database. No automated test suite is included; the walkthrough
 above provides manual requests to try the application.

@@ -69,11 +69,17 @@ def add_edge(
     }
 
 
-@router.get("/edges", response_model=List[EdgeListResponse])
+@router.get(
+    "/edges",
+    response_model=List[EdgeListResponse],
+    responses={400: {"model": ErrorResponse}},
+)
 def list_edges(
     is_active: Optional[bool] = None,
     source: Optional[str] = Query(default=None, min_length=1),
     destination: Optional[str] = Query(default=None, min_length=1),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
     database: sqlite3.Connection = Depends(get_database),
 ):
     query = """
@@ -99,7 +105,8 @@ def list_edges(
 
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
-    query += " ORDER BY edges.id"
+    query += " ORDER BY edges.id LIMIT ? OFFSET ?"
+    parameters.extend([limit, offset])
 
     rows = database.execute(query, parameters).fetchall()
     return [dict(row) for row in rows]

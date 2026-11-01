@@ -52,10 +52,16 @@ def add_node(
     return {"id": node_id, "name": node.name}
 
 
-@router.get("/nodes", response_model=List[NodeListResponse])
+@router.get(
+    "/nodes",
+    response_model=List[NodeListResponse],
+    responses={400: {"model": ErrorResponse}},
+)
 def list_nodes(
     is_active: Optional[bool] = None,
     name: Optional[str] = Query(default=None, min_length=1),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
     database: sqlite3.Connection = Depends(get_database),
 ):
     query = "SELECT id, name, is_active, created_at, deactivated_at FROM nodes"
@@ -69,7 +75,8 @@ def list_nodes(
         parameters.append(name.strip())
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
-    query += " ORDER BY id"
+    query += " ORDER BY id LIMIT ? OFFSET ?"
+    parameters.extend([limit, offset])
 
     rows = database.execute(query, parameters).fetchall()
     return [dict(row) for row in rows]

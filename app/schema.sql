@@ -9,6 +9,9 @@ CREATE TABLE IF NOT EXISTS nodes (
 CREATE UNIQUE INDEX IF NOT EXISTS unique_active_node_name
 ON nodes (name) WHERE is_active = 1;
 
+CREATE INDEX IF NOT EXISTS idx_nodes_name ON nodes (name);
+CREATE INDEX IF NOT EXISTS idx_nodes_is_active ON nodes (is_active);
+
 CREATE TABLE IF NOT EXISTS edges (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_id INTEGER NOT NULL REFERENCES nodes(id),
@@ -22,6 +25,10 @@ CREATE TABLE IF NOT EXISTS edges (
 CREATE UNIQUE INDEX IF NOT EXISTS unique_active_edge
 ON edges (source_id, destination_id) WHERE is_active = 1;
 
+CREATE INDEX IF NOT EXISTS idx_edges_source_id ON edges (source_id);
+CREATE INDEX IF NOT EXISTS idx_edges_destination_id ON edges (destination_id);
+CREATE INDEX IF NOT EXISTS idx_edges_is_active ON edges (is_active);
+
 CREATE TABLE IF NOT EXISTS route_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT NOT NULL,
@@ -30,3 +37,6 @@ CREATE TABLE IF NOT EXISTS route_history (
     path TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_route_history_created_at
+ON route_history (created_at DESC, id DESC);
